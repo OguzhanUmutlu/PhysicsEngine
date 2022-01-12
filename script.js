@@ -6,6 +6,7 @@ let __uuid = 0;
 let entities = [];
 let key_down = null;
 let points = [];
+const CURVED_CONNECTIONS = false;
 
 const entity_def = {
     "color": "#000000",
@@ -303,7 +304,7 @@ function render() {
         const circle = new Path2D();
         circle.arc(entity.x, entity.y, entity.getRadius() / 2, 0, Math.PI * 2);
         ctx.fill(circle);
-        entity.connected.forEach(entity2 => ctx.drawCurveLine(entity.x, entity.y, entity2.x, entity2.y));
+        entity.connected.forEach(entity2 => ctx[CURVED_CONNECTIONS ? "drawCurveLine" : "drawLine"](entity.x, entity.y, entity2.x, entity2.y));
     });
     setTimeout(render, 1);
 }
@@ -321,12 +322,12 @@ addEventListener("keydown", ev => {
         switch (ev.key) {
             case " ":
                 entity = new Entity(mouse.x, mouse.y, {
-                    ropeTension: false, ropeMaxTension: false, gravity: undefined
+                    ropeTension: false, ropeMaxTension: false, gravity: undefined, color: "rgb(0, 255, 0)"
                 });
                 break;
             case "Shift":
                 entity = new Entity(mouse.x, mouse.y, {
-                    ropeTension: false, ropeMaxTension: false, gravity: undefined, g: true
+                    ropeTension: false, ropeMaxTension: false, gravity: undefined, color: "rgb(255, 0, 0)", g: true
                 });
                 break;
             default:
@@ -340,7 +341,9 @@ addEventListener("keydown", ev => {
 addEventListener("mouseup", ev => {
     if (key_down) {
         if ((ev.clientX === key_down.x && ev.clientY === key_down.y) || points.length < 1) {
-            new Entity(ev.clientX, ev.clientY);
+            new Entity(ev.clientX, ev.clientY, {
+                color: "rgb(0, 0, 255)"
+            });
             key_down = null;
             points = [];
         } else {
