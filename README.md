@@ -9,11 +9,17 @@ Basic 2D physics
 ### Click
 - Spawns entities that has gravity
 
-### Hold -> Space/Shift.... -> Mouse Up
+### Hold -> Z/X/C.... -> Mouse Up
 - Spawns entities that are connected each other
 
-### Hold -> Space
+### Hold -> Click
 - Gravity entity
 
-### Hold -> Shift
+### Hold -> Z
 - Non-gravity entity
+
+### Hold -> X
+- Non-gravity and non-colliding entity
+
+### Hold -> C
+- Gravity and killer entity

@@ -1,3 +1,5 @@
+// noinspection DuplicatedCode, JSUnusedGlobalSymbols
+
 /*** @type {HTMLCanvasElement} */
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -12,10 +14,11 @@ const entity_def = {
     "color": "#000000",
     "radius": 10,
     "collisionEnabled": true,
-    "ropeTension": 20,
+    "ropeTension": 17,
     "ropeMaxTension": 50,
     "gravity": 0.5,
-    "gravityMomentum": 0.01
+    "gravityMomentum": 0.01,
+    "killer": false
 };
 
 ctx.drawLine = (x1, y1, x2, y2) => {
@@ -166,13 +169,13 @@ class Entity extends V2 {
     /**
      * @param {number} x
      * @param {number} y
-     * @param {{color: string?, radius: number?, collisionEnabled: boolean?, ropeTension: (number | false)?, ropeMaxTension: (number | false)?, gravity: (number | false)?, gravityMomentum: (number | false)?}?} options
+     * @param {{color: string?, radius: number?, collisionEnabled: boolean?, ropeTension: (number | false)?, ropeMaxTension: (number | false)?, gravity: (number | false)?, gravityMomentum: (number | false)?, killer: boolean?}?} options
      */
     constructor(x, y, options) {
         super(x, y);
         if (!options) options = {};
         Object.keys(entity_def).forEach(key => Object.keys(options).includes(key) ? null : options[key] = entity_def[key]);
-        /*** @type {{color: string, radius: number, collisionEnabled: boolean, ropeTension: number | false, ropeMaxTension: number | false, gravity: number | false, gravityMomentum: number | false}} */
+        /*** @type {{color: string, radius: number, collisionEnabled: boolean, ropeTension: number | false, ropeMaxTension: number | false, gravity: number | false, gravityMomentum: number | false, killer: boolean}} */
         this.options = options;
         this.alive = true;
         this.uuid = __uuid++;
@@ -229,6 +232,12 @@ class Entity extends V2 {
         return this;
     }
 
+    /*** @returns {Entity} */
+    checkConnections() {
+        this.connected = this.connected.filter(entity => entity.alive && entity !== this);
+        return this;
+    }
+
     /*** @returns {Entity[]} */
     getCollisions() {
         return entities
@@ -240,39 +249,77 @@ class Entity extends V2 {
         return this.add(this.getRadius() / 2, this.getRadius() / 2);
     }
 
+    /*** @returns {number} */
     updateGravity() {
-        if (this.options.gravity === undefined) return;
+        if (this.options.gravity === undefined) return 0;
         return this.y += (this.options.gravity || 0) + (this.fall_momentum += (this.options.gravityMomentum || 0));
+    }
+
+    /*** @returns {Entity} */
+    resetFallMomentum() {
+        this.fall_momentum = 0;
+        return this;
+    }
+
+    /**
+     * @param {number?} amount
+     * @returns {Entity}
+     */
+    decreaseFallMomentum(amount = 1) {
+        this.fall_momentum -= amount;
+        if (this.fall_momentum < 0) this.fall_momentum = 0;
+        return this;
+    }
+
+    updateRopeTension() {
+        if (this.options.ropeTension === false) return false;
+        const rope = this.connected
+            .filter(i => i.distance(this) > this.options.ropeTension)
+            .sort((a, b) => b.distance(this) - a.distance(this))[0];
+        if (rope) {
+            const motion = this.getMiddle().motion_to(rope.getMiddle());
+            this.set_position(this.add(motion.x, motion.y));
+            this.decreaseFallMomentum(0.5);
+        } else return false;
+        return true;
+    }
+
+    updateMaxRopeTension() {
+        if (this.options.ropeMaxTension === false) return false;
+        const rope = this.connected
+            .filter(i => i.distance(this) > this.options.ropeMaxTension)
+            .sort((a, b) => b.distance(this) - a.distance(this))[0];
+        if (rope) {
+            const motion = this.getMiddle().motion_to(rope).multiply(this.distance(rope.getMiddle()) - this.options.ropeTension, this.distance(rope.getMiddle()) - this.options.ropeTension);
+            this.set_position(this.add(motion.x, motion.y));
+            this.decreaseFallMomentum(0.5);
+        } else return false;
+        return true;
+    }
+
+    updateCollisions() {
+        if (!this.options.collisionEnabled) return false;
+        const collision = this.getCollisions()[0];
+        if (collision) {
+            const motion = this.getMiddle().motion_reversed_to(collision.getMiddle()).multiply(2, 2);
+            this.set_position(this.add(motion.x, motion.y));
+            this.decreaseFallMomentum(0.1);
+        }
     }
 
     update() {
         this.ticks++;
-        const collision = this.getCollisions()[0];
-        const ropeAlert = this.connected
-            .filter(i => i.distance(this) > this.options.ropeMaxTension)
-            .sort((a, b) => b.distance(this) - a.distance(this))[0];
-        const ropeDistance = this.connected
-            .filter(i => i.distance(this) > this.options.ropeTension)
-            .sort((a, b) => b.distance(this) - a.distance(this))[0];
-        if (ropeAlert) {
-            if (this.options.ropeMaxTension !== false) {
-                const motion = this.getMiddle().motion_to(ropeAlert).multiply(this.distance(ropeAlert.getMiddle()) - this.options.ropeTension, this.distance(ropeAlert.getMiddle()) - this.options.ropeTension);
-                this.set_position(this.add(motion.x, motion.y));
-                this.fall_momentum = 0;
-            }
-        } else if (ropeDistance) {
-            if (this.options.ropeTension !== false) {
-                const motion = this.getMiddle().motion_to(ropeDistance.getMiddle());
-                this.set_position(this.add(motion.x, motion.y));
-                this.fall_momentum = 0;
-            }
-        } else if (collision) {
-            if (this.options.collisionEnabled) {
-                const motion = this.getMiddle().motion_reversed_to(collision.getMiddle()).multiply(2, 2);
-                this.set_position(this.add(motion.x, motion.y));
-                this.fall_momentum = 0;
-            }
-        } else this.updateGravity();
+        this.checkConnections();
+        if (this.options.killer && this.getCollisions().some(i => !i.options.killer)) this.getCollisions().filter(i => !i.options.killer).forEach(i => i.kill());
+        if (!this.updateMaxRopeTension() && !this.updateRopeTension() && !this.updateCollisions()) {
+            this.updateGravity();
+        }
+    }
+
+    /*** @returns {Entity} */
+    kill() {
+        this.alive = false;
+        return this;
     }
 }
 
@@ -290,23 +337,46 @@ function fromJSON(json) {
 
 const mouse = new V2();
 addEventListener("mousemove", ev => mouse.set_position(new V2(ev.clientX, ev.clientY)));
+let _fps = 0;
+let fps = 0;
+let __fps;
 
 function render() {
+    _fps++;
+    if (!__fps) __fps = Date.now() + 1000;
+    if (__fps < Date.now()) {
+        __fps = Date.now() + 1000;
+        fps = _fps;
+        _fps = 0;
+        document.getElementById("fps").innerHTML = fps;
+    }
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     entities.filter(entity => entity.alive).forEach(entity => entity.update());
     entities.filter(entity => entity.alive).forEach(entity => {
-        if (entity.x < 0) entity.x = 0;
-        if (entity.x > canvas.width - (entity.getRadius() / 2)) entity.x = canvas.width - (entity.getRadius() / 2);
-        if (entity.y < 0) entity.y = 0;
-        if (entity.y > canvas.height - (entity.getRadius() / 2)) entity.y = canvas.height - (entity.getRadius() / 2);
+        if (entity.x < 0) {
+            entity.x = 0;
+            entity.resetFallMomentum();
+        }
+        if (entity.x > canvas.width - (entity.getRadius() / 2)) {
+            entity.x = canvas.width - (entity.getRadius() / 2);
+            entity.resetFallMomentum();
+        }
+        if (entity.y < 0) {
+            entity.y = 0;
+            entity.resetFallMomentum();
+        }
+        if (entity.y > canvas.height - (entity.getRadius() / 2)) {
+            entity.y = canvas.height - (entity.getRadius() / 2);
+            entity.resetFallMomentum();
+        }
         ctx.fillStyle = entity.getColor();
         const circle = new Path2D();
         circle.arc(entity.x, entity.y, entity.getRadius() / 2, 0, Math.PI * 2);
         ctx.fill(circle);
         entity.connected.forEach(entity2 => ctx[CURVED_CONNECTIONS ? "drawCurveLine" : "drawLine"](entity.x, entity.y, entity2.x, entity2.y));
     });
-    setTimeout(render, 1);
+    setTimeout(render);
 }
 
 render();
@@ -325,9 +395,23 @@ addEventListener("keydown", ev => {
                     ropeTension: false, ropeMaxTension: false, gravity: undefined, color: "rgb(0, 255, 0)"
                 });
                 break;
-            case "Shift":
+            case "z":
+            case "Z":
                 entity = new Entity(mouse.x, mouse.y, {
-                    ropeTension: false, ropeMaxTension: false, gravity: undefined, color: "rgb(255, 0, 0)", g: true
+                    ropeTension: false, ropeMaxTension: false, gravity: undefined, color: "rgb(255, 0, 255)", g: true
+                });
+                break;
+            case "x":
+            case "X":
+                entity = new Entity(mouse.x, mouse.y, {
+                    ropeTension: false, ropeMaxTension: false, gravity: undefined, collisionEnabled: false,
+                    color: "rgb(255, 255, 0)", g: true
+                });
+                break;
+            case "c":
+            case "C":
+                entity = new Entity(mouse.x, mouse.y, {
+                    ropeTension: false, ropeMaxTension: false, gravity: undefined, killer: true, color: "rgb(255, 0, 0)"
                 });
                 break;
             default:
@@ -335,6 +419,34 @@ addEventListener("keydown", ev => {
         }
         if (points[points.length - 1]) entity.connect(points[points.length - 1]);
         points.push(entity);
+    } else {
+        switch (ev.key) {
+            case " ":
+                new Entity(mouse.x, mouse.y, {
+                    color: "rgb(0, 255, 0)"
+                });
+                break;
+            case "z":
+            case "Z":
+                new Entity(mouse.x, mouse.y, {
+                    gravity: undefined, color: "rgb(255, 0, 255)"
+                });
+                break;
+            case "x":
+            case "X":
+                new Entity(mouse.x, mouse.y, {
+                    gravity: undefined, collisionEnabled: false, color: "rgb(255, 255, 0)"
+                });
+                break;
+            case "c":
+            case "C":
+                new Entity(mouse.x, mouse.y, {
+                    killer: true, color: "rgb(255, 0, 0)"
+                });
+                break;
+            default:
+                return;
+        }
     }
 });
 
@@ -342,7 +454,7 @@ addEventListener("mouseup", ev => {
     if (key_down) {
         if ((ev.clientX === key_down.x && ev.clientY === key_down.y) || points.length < 1) {
             new Entity(ev.clientX, ev.clientY, {
-                color: "rgb(0, 0, 255)"
+                color: "rgb(0, 255, 0)"
             });
             key_down = null;
             points = [];
@@ -352,8 +464,7 @@ addEventListener("mouseup", ev => {
                     i.options.ropeTension = entity_def.ropeTension;
                     i.options.ropeMaxTension = entity_def.ropeMaxTension;
                     i.options.gravity = entity_def.gravity;
-                }
-                else delete i.options.g;
+                } else delete i.options.g;
             });
             key_down = null;
             points = [];
