@@ -131,29 +131,27 @@ class V2 {
     }
 
     /**
-     * @param {number} degrees - As degrees
+     * @param {number} radians - As radians
      * @returns {V2}
      */
-    direction_reversed(degrees) {
-        return this.direction(degrees).multiply(-1, -1);
+    direction_reversed(radians) {
+        return this.direction(radians).multiply(-1, -1);
     }
 
     /**
-     * @param {number} degrees - As degrees
+     * @param {number} radians - As radians
      * @returns {V2}
      */
-    direction(degrees) {
-        return new V2(-Math.sin(((degrees - 90) * Math.PI / 180) - (Math.PI / 2)), -Math.cos(((degrees - 90) * Math.PI / 180) - (Math.PI / 2)));
+    direction(radians) {
+        return new V2(Math.sin(radians), Math.cos(radians));
     }
 
     /**
      * @param {V2} v2
-     * @returns {number} - As degrees
+     * @returns {number} - As radians
      */
     look_at(v2) {
-        let res = Math.atan2(v2.x - this.x, v2.y - this.y) / Math.PI * 180;
-        if (res < 0) res += 360;
-        return res;
+        return Math.atan2(v2.x - this.x, v2.y - this.y);
     }
 
     motion_to(v2) {
