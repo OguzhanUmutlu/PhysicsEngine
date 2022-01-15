@@ -47,7 +47,7 @@ class V2 {
 
     /**
      * @param {number | V2} x
-     * @param {number} y
+     * @param {number?} y
      * @returns {V2}
      */
     add(x, y) {
@@ -60,7 +60,7 @@ class V2 {
 
     /**
      * @param {number | V2} x
-     * @param {number} y
+     * @param {number?} y
      * @returns {V2}
      */
     subtract(x, y) {
@@ -73,7 +73,7 @@ class V2 {
 
     /**
      * @param {number | V2} x
-     * @param {number} y
+     * @param {number?} y
      * @returns {V2}
      */
     multiply(x, y) {
@@ -86,7 +86,7 @@ class V2 {
 
     /**
      * @param {number | V2} x
-     * @param {number} y
+     * @param {number?} y
      * @returns {V2}
      */
     divide(x, y) {
@@ -161,6 +161,10 @@ class V2 {
     motion_reversed_to(v2) {
         return this.direction_reversed(this.look_at(v2));
     }
+
+    to_vector2() {
+        return new V2(this.x, this.y);
+    }
 }
 
 class Entity extends V2 {
@@ -181,11 +185,13 @@ class Entity extends V2 {
         entities.push(this);
         /*** @type {Entity[]} */
         this.connected = [];
+        this.fall_start = new V2(x, y);
         this.fall_momentum = 0;
+        this.bounce_velocity = 0;
     }
 
     /*** @returns {number} */
-    getRadius() {
+    get_radius() {
         return this.options.radius;
     }
 
@@ -193,13 +199,13 @@ class Entity extends V2 {
      * @param {number} radius
      * @returns {Entity}
      */
-    setRadius(radius) {
+    set_radius(radius) {
         this.options.radius = radius;
         return this;
     }
 
     /*** @returns {string} */
-    getColor() {
+    get_color() {
         return this.options.color;
     }
 
@@ -207,7 +213,7 @@ class Entity extends V2 {
      * @param {string} color
      * @returns {Entity}
      */
-    setColor(color) {
+    set_color(color) {
         this.options.color = color;
         return this;
     }
@@ -217,7 +223,7 @@ class Entity extends V2 {
      * @returns {boolean}
      */
     collides(entity) {
-        return this.getMiddle().distance(entity.getMiddle()) < ((entity.getRadius() + this.getRadius()) / 2);
+        return this.get_middle().distance(entity.get_middle()) < ((entity.get_radius() + this.get_radius()) / 2);
     }
 
     /**
@@ -231,30 +237,39 @@ class Entity extends V2 {
     }
 
     /*** @returns {Entity} */
-    checkConnections() {
+    check_connections() {
         this.connected = this.connected.filter(entity => entity.alive && entity !== this);
         return this;
     }
 
     /*** @returns {Entity[]} */
-    getCollisions() {
+    get_collisions() {
         return entities
             .filter(entity => entity.alive && entity !== this && this.collides(entity));
     }
 
     /*** @returns {V2} */
-    getMiddle() {
-        return this.add(this.getRadius() / 2, this.getRadius() / 2);
+    get_middle() {
+        return this.add(this.get_radius() / 2, this.get_radius() / 2);
     }
 
     /*** @returns {number} */
-    updateGravity() {
+    update_velocity() {
         if (this.options.gravity === undefined) return 0;
-        return this.y += (this.options.gravity || 0) + (this.fall_momentum += (this.options.gravityMomentum || 0));
+        if (this.bounce_velocity > 15) {
+            const motion = new V2(0, -(this.bounce_velocity / 30));
+            this.bounce_velocity += motion.y;
+            this.set_position(this.add(motion));
+            if (this.bounce_velocity <= 15) {
+                this.bounce_velocity = 0;
+                this.fall_start = this.to_vector2();
+                this.fall_momentum = this.bounce_velocity / 30;
+            }
+        } else return this.y += (this.options.gravity || 0) + (this.fall_momentum += (this.options.gravityMomentum || 0));
     }
 
     /*** @returns {Entity} */
-    resetFallMomentum() {
+    reset_fall_momentum() {
         this.fall_momentum = 0;
         return this;
     }
@@ -263,55 +278,75 @@ class Entity extends V2 {
      * @param {number?} amount
      * @returns {Entity}
      */
-    decreaseFallMomentum(amount = 1) {
+    decrease_fall_momentum(amount = 1) {
         this.fall_momentum -= amount;
         if (this.fall_momentum < 0) this.fall_momentum = 0;
         return this;
     }
 
-    updateRopeTension() {
+    /*** @returns {Entity} */
+    bounce() {
+        if (!this.fall_start) return this;
+        this.reset_fall_momentum();
+        this.bounce_velocity += (this.y - this.fall_start.y) / 3;
+        if (this.bounce_velocity < 0) this.bounce_velocity = 0;
+        this.fall_start = null;
+        return this;
+    }
+
+    /*** @returns {boolean} */
+    update_rope_tension() {
         if (this.options.ropeTension === false) return false;
         const rope = this.connected
             .filter(i => i.distance(this) > this.options.ropeTension)
             .sort((a, b) => b.distance(this) - a.distance(this))[0];
         if (rope) {
-            const motion = this.getMiddle().motion_to(rope.getMiddle());
-            this.set_position(this.add(motion.x, motion.y));
-            this.decreaseFallMomentum(0.5);
-        } else return false;
-        return true;
+            const motion = this.get_middle().motion_to(rope.get_middle());
+            this.set_position(this.add(motion));
+            this.decrease_fall_momentum(0.02);
+            return true;
+        }
+        return false;
     }
 
-    updateMaxRopeTension() {
+    /*** @returns {boolean} */
+    update_max_rope_tension() {
         if (this.options.ropeMaxTension === false) return false;
         const rope = this.connected
             .filter(i => i.distance(this) > this.options.ropeMaxTension)
             .sort((a, b) => b.distance(this) - a.distance(this))[0];
         if (rope) {
-            const motion = this.getMiddle().motion_to(rope).multiply(this.distance(rope.getMiddle()) - this.options.ropeTension, this.distance(rope.getMiddle()) - this.options.ropeTension);
-            this.set_position(this.add(motion.x, motion.y));
-            this.decreaseFallMomentum(0.5);
-        } else return false;
-        return true;
-    }
-
-    updateCollisions() {
-        if (!this.options.collisionEnabled) return false;
-        const collision = this.getCollisions()[0];
-        if (collision) {
-            const motion = this.getMiddle().motion_reversed_to(collision.getMiddle()).multiply(2, 2);
-            this.set_position(this.add(motion.x, motion.y));
-            this.decreaseFallMomentum(0.1);
+            const motion = this.get_middle().motion_to(rope).multiply(this.distance(rope.get_middle()) - this.options.ropeTension, this.distance(rope.get_middle()) - this.options.ropeTension);
+            this.set_position(this.add(motion));
+            this.decrease_fall_momentum(0.02);
+            return true;
         }
+        return false;
     }
 
+    /*** @returns {boolean} */
+    update_collisions() {
+        if (!this.options.collisionEnabled) return false;
+        const collision = this.get_collisions()[0];
+        if (collision) {
+            if (collision.y > this.y) this.bounce();
+            const motion = this.get_middle().motion_reversed_to(collision.get_middle()).multiply(2, 2);
+            this.set_position(this.add(motion));
+            this.decrease_fall_momentum(0.1);
+            return true;
+        }
+        return false;
+    }
+
+    /*** @returns {Entity} */
     update() {
         this.ticks++;
-        this.checkConnections();
-        if (this.options.killer && this.getCollisions().some(i => !i.options.killer)) this.getCollisions().filter(i => !i.options.killer).forEach(i => i.kill());
-        if (!this.updateMaxRopeTension() && !this.updateRopeTension() && !this.updateCollisions()) {
-            this.updateGravity();
+        this.check_connections();
+        if (this.options.killer && this.get_collisions().some(i => !i.options.killer)) this.get_collisions().filter(i => !i.options.killer).forEach(i => i.kill());
+        if (!this.update_max_rope_tension() && !this.update_rope_tension() && !this.update_collisions()) {
+            this.update_velocity();
         }
+        return this;
     }
 
     /*** @returns {Entity} */
@@ -354,23 +389,24 @@ function render() {
     entities.filter(entity => entity.alive).forEach(entity => {
         if (entity.x < 0) {
             entity.x = 0;
-            entity.resetFallMomentum();
+            entity.reset_fall_momentum();
         }
-        if (entity.x > canvas.width - (entity.getRadius() / 2)) {
-            entity.x = canvas.width - (entity.getRadius() / 2);
-            entity.resetFallMomentum();
+        if (entity.x > canvas.width - (entity.get_radius() / 2)) {
+            entity.x = canvas.width - (entity.get_radius() / 2);
+            entity.reset_fall_momentum();
         }
         if (entity.y < 0) {
             entity.y = 0;
-            entity.resetFallMomentum();
+            entity.reset_fall_momentum();
         }
-        if (entity.y > canvas.height - (entity.getRadius() / 2)) {
-            entity.y = canvas.height - (entity.getRadius() / 2);
-            entity.resetFallMomentum();
+        if (entity.y > canvas.height - (entity.get_radius() / 2)) {
+            entity.y = canvas.height - (entity.get_radius() / 2);
+            entity.bounce();
+            entity.reset_fall_momentum();
         }
-        ctx.fillStyle = entity.getColor();
+        ctx.fillStyle = entity.get_color();
         const circle = new Path2D();
-        circle.arc(entity.x, entity.y, entity.getRadius() / 2, 0, Math.PI * 2);
+        circle.arc(entity.x, entity.y, entity.get_radius() / 2, 0, Math.PI * 2);
         ctx.fill(circle);
         entity.connected.forEach(entity2 => ctx[CURVED_CONNECTIONS ? "drawCurveLine" : "drawLine"](entity.x, entity.y, entity2.x, entity2.y));
     });
