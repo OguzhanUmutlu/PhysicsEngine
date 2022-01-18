@@ -9,7 +9,7 @@ let entities = [];
 let key_down = null;
 let points = [];
 
-const CURVED_CONNECTIONS = true;
+const CURVED_CONNECTIONS = false;
 const entity_def = {
     "color": "#000000",
     "radius": 10,
